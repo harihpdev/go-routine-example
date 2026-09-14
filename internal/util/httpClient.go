@@ -13,7 +13,8 @@ var client = http.Client{
 	Timeout: 5 * time.Second,
 }
 
-func CustomRequest(url string, mu *sync.Mutex, wg *sync.WaitGroup, ch chan<- types.FetchResult) {
+// Removed unused 'mu *sync.Mutex' parameter
+func CustomRequest(url string, wg *sync.WaitGroup, ch chan<- types.FetchResult) {
 	defer wg.Done()
 
 	var res = types.FetchResult{Url: url}
@@ -37,6 +38,7 @@ func CustomRequest(url string, mu *sync.Mutex, wg *sync.WaitGroup, ch chan<- typ
 		ch <- res
 		return
 	}
+
 	res.Data = data
-	ch <- res
+	ch <- res // Hand off result through unbuffered channel
 }

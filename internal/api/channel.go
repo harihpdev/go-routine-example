@@ -12,22 +12,21 @@ import (
 )
 
 const Max_Request_Size = 1024 * 1024 // 1 MB Limit
+
 type RequestData struct {
-	Urls []string
+	Urls []string `json:"urls"`
 }
 
-func channelHandler(w http.ResponseWriter, r *http.Request) {
+func ChannelHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close() // Always close request body
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	var requestData RequestData
 	var result types.FetchChannelResponse
 
-	respChan := make(chan types.FetchResult)
+	respChan := make(chan types.FetchResult) // Unbuffered channel
 
-	// 1. Limit memory allocation against malicious oversized payloads
 	limitReader := io.LimitReader(r.Body, Max_Request_Size)
-
 	if err := json.NewDecoder(limitReader).Decode(&requestData); err != nil {
 		http.Error(w, "Invalid Request Payload", http.StatusBadRequest)
 		return
@@ -36,23 +35,23 @@ func channelHandler(w http.ResponseWriter, r *http.Request) {
 	for _, url := range requestData.Urls {
 		wg.Add(1)
 		go func(u string) {
-			util.CustomRequest(u, &mu, &wg, respChan)
+			util.CustomRequest(u, &wg, respChan)
 		}(url)
 	}
 
+	// Separate closer goroutine
 	go func() {
 		wg.Wait()
 		close(respChan)
 	}()
 
+	// Read results synchronously as workers push them into the channel
 	for r := range respChan {
-
 		if r.Err != nil {
 			fmt.Printf("Error fetching %s: %v\n", r.Url, r.Err)
 			continue
 		}
 
-		// Use a type switch to handle different formats safely
 		switch data := r.Data.(type) {
 		case *types.IPResponse:
 			result.Origin = data.Origin
@@ -61,18 +60,17 @@ func channelHandler(w http.ResponseWriter, r *http.Request) {
 		case *types.UserAgentResponse:
 			result.UserAgent = data.UserAgent
 		default:
-			fmt.Printf("❓ Unknown data type returned from %s\n", r.Url)
+			fmt.Printf("Unknown data type returned from %s\n", r.Url)
 		}
 	}
 
-	resString, err := json.Marshal(result)
+	resBytes, err := json.Marshal(result)
 	if err != nil {
-		http.Error(w, "Invalid Request Payload", http.StatusBadRequest)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
 
-	// All success
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	w.Write(resString)
+	w.WriteHeader(http.StatusOK)
+	w.Write(resBytes)
 }

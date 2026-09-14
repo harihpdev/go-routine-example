@@ -42,3 +42,8 @@ func GetModelForURL(url string) (any, error) {
 		return nil, fmt.Errorf("unsupported dynamic route: %s", url)
 	}
 }
+
+type Task struct {
+	TaskId  string `json:"task_id"`
+	Payload string `json:"payload"`
+}
